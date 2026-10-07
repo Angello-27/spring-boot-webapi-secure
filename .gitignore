@@ -3,3 +3,9 @@ target/
 *.iml
 .vscode/
 *.log
+
+.DS_Store
+quality-gate-report.md
+evidencias/Laboratorio3-CI-Seguro.html
+evidencias/capturas/
+evidencias/Laboratorio3-CI-Seguro.pdf
