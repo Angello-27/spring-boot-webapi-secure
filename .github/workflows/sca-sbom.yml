@@ -1,0 +1,78 @@
+name: SCA y SBOM
+
+# Taller docs/02-sca-sbom-github-actions.md. Se ejecuta dentro de los pipelines
+# CI / CI-CD / nightly (workflow_call) y también manualmente.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sca:
+    name: SCA - SBOM y vulnerabilidades
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      TRIVY_IMAGE: aquasec/trivy:0.74.0
+
+    steps:
+      - name: Obtener codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Compilar y ejecutar pruebas
+        run: mvn -B clean verify
+
+      - name: Generar SBOM CycloneDX
+        run: mvn -B org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom
+
+      - name: Validar presencia del SBOM
+        run: test -s target/bom.json
+
+      - name: Generar reporte SCA completo
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/target:/work" \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" sbom \
+            --scanners vuln \
+            --exit-code 0 \
+            --format json \
+            --output /work/sca-report.json \
+            /work/bom.json
+
+      - name: Quality gate HIGH y CRITICAL
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/target:/work" \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" sbom \
+            --scanners vuln \
+            --skip-db-update \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --format table \
+            --output /work/sca-gate.txt \
+            /work/bom.json
+
+      - name: Publicar evidencias
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-sbom-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            target/bom.json
+            target/sca-report.json
+            target/sca-gate.txt
+          if-no-files-found: warn
+          retention-days: 7

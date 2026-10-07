@@ -1,0 +1,275 @@
+name: Security Pipeline (reutilizable)
+
+# Workflow reutilizable con los controles de CI seguro. Lo invocan:
+#   - ci-sec.yml          (feature/**, bugfix/**, hotfix/** y PRs a main/develop)
+#   - ci-cd-sec.yml       (push a main y develop, antes del build/push de la imagen)
+#   - ci-sec-nightly.yml  (nightly, agrega OWASP Dependency-Check)
+# El job "Quality Gate" lee los reportes de cada herramienta y bloquea si hay
+# hallazgos críticos. Es el check requerido por la protección de la rama main.
+
+on:
+  workflow_call:
+    inputs:
+      dependency-check:
+        description: Ejecutar OWASP Dependency-Check (requiere el secreto NVD_API_KEY)
+        type: boolean
+        default: false
+      cvss-threshold:
+        description: Umbral CVSS / security-severity que bloquea el gate
+        type: string
+        default: '7.0'
+    secrets:
+      NVD_API_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '21'
+  MAVEN_OPTS: '-Xmx2g'
+
+jobs:
+  # ------------------------------------------------------------------
+  # 1. Build + pruebas + cobertura
+  # ------------------------------------------------------------------
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Build & test with coverage
+        run: mvn -B clean verify
+
+      - name: Upload test & coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-and-coverage-reports
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+          retention-days: 7
+
+  # ------------------------------------------------------------------
+  # 2. SAST - CodeQL
+  # ------------------------------------------------------------------
+  sast-codeql:
+    name: SAST - CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java
+          queries: security-and-quality
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java"
+          output: codeql-results
+
+      - name: Upload CodeQL SARIF
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-codeql
+          path: codeql-results/
+          retention-days: 14
+
+  # ------------------------------------------------------------------
+  # 3. SAST - Semgrep
+  # ------------------------------------------------------------------
+  sast-semgrep:
+    name: SAST - Semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      # Los hallazgos no detienen este job: el Quality Gate decide con el reporte.
+      - name: Ejecutar Semgrep
+        run: |
+          semgrep scan \
+            --config auto \
+            --config .semgrep.yml \
+            --metrics=on \
+            --json-output=semgrep-results.json \
+            --sarif-output=semgrep-results.sarif \
+            src/main/java
+
+      - name: Upload Semgrep reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-semgrep
+          path: |
+            semgrep-results.json
+            semgrep-results.sarif
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ------------------------------------------------------------------
+  # 4. Análisis estático - SpotBugs + FindSecBugs
+  # ------------------------------------------------------------------
+  static-analysis:
+    name: Static Analysis - SpotBugs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      # Goal "spotbugs" (no "check"): genera el reporte sin fallar; el gate lo evalúa.
+      - name: Run SpotBugs
+        run: mvn -B clean compile com.github.spotbugs:spotbugs-maven-plugin:spotbugs
+
+      - name: Upload SpotBugs report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-spotbugs
+          path: target/spotbugsXml.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ------------------------------------------------------------------
+  # 5. SCA - SBOM CycloneDX + Trivy (ver sca-sbom.yml)
+  # ------------------------------------------------------------------
+  sca-sbom:
+    name: SCA
+    uses: ./.github/workflows/sca-sbom.yml
+
+  # ------------------------------------------------------------------
+  # 6. SCA - OWASP Dependency-Check (opcional, nightly)
+  # ------------------------------------------------------------------
+  sca-dependency-check:
+    name: SCA - OWASP Dependency-Check
+    if: inputs.dependency-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Validar clave NVD
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          if [ -z "$NVD_API_KEY" ]; then
+            echo "::error::Falta el secreto NVD_API_KEY (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+
+      # La base NVD se cachea entre ejecuciones para no descargarla completa cada noche.
+      - name: Cache NVD database
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/owasp/dependency-check-data
+          key: nvd-db-${{ github.run_id }}
+          restore-keys: nvd-db-
+
+      # failBuildOnCVSS=11 genera siempre el reporte; los errores técnicos sí fallan el job.
+      - name: Run OWASP Dependency-Check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: mvn -B org.owasp:dependency-check-maven:check -DfailBuildOnCVSS=11
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-dependency-check
+          path: |
+            target/dependency-check-report.html
+            target/dependency-check-report.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ------------------------------------------------------------------
+  # 7. Quality Gate: lee los reportes y bloquea ante hallazgos críticos
+  # ------------------------------------------------------------------
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    needs: [build-and-test, sast-codeql, sast-semgrep, static-analysis, sca-sbom, sca-dependency-check]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descargar reportes
+        uses: actions/download-artifact@v4
+        with:
+          path: reports
+
+      - name: Resultado de los jobs
+        run: |
+          echo "Build & Test:      ${{ needs.build-and-test.result }}"
+          echo "CodeQL:            ${{ needs.sast-codeql.result }}"
+          echo "Semgrep:           ${{ needs.sast-semgrep.result }}"
+          echo "SpotBugs:          ${{ needs.static-analysis.result }}"
+          echo "SCA Trivy:         ${{ needs.sca-sbom.result }}"
+          echo "Dependency-Check:  ${{ needs.sca-dependency-check.result }}"
+          find reports -type f | sort
+
+      - name: Evaluar reportes
+        run: |
+          ARGS=(
+            --semgrep reports/report-semgrep/semgrep-results.json
+            --codeql reports/report-codeql
+            --spotbugs reports/report-spotbugs/spotbugsXml.xml
+            --trivy "reports/sca-sbom-${{ github.run_id }}-${{ github.run_attempt }}/sca-report.json"
+            --cvss "${{ inputs.cvss-threshold }}"
+          )
+          if [ "${{ inputs.dependency-check }}" = "true" ]; then
+            ARGS+=(--dependency-check reports/report-dependency-check/dependency-check-report.json)
+          fi
+          python3 .github/scripts/quality_gate.py "${ARGS[@]}"
+
+      - name: Verificar que no fallaron jobs
+        if: always()
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "::error::Uno o más jobs del pipeline fallaron o fueron cancelados"
+            exit 1
+          fi
+
+      - name: Publicar reporte del gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-report
+          path: quality-gate-report.md
+          if-no-files-found: warn
+          retention-days: 14
