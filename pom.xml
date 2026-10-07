@@ -19,6 +19,8 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- Umbral CVSS de Dependency-Check; se puede sobrescribir con -DfailBuildOnCVSS=11 -->
+        <failBuildOnCVSS>7</failBuildOnCVSS>
     </properties>
 
     <dependencies>
@@ -88,10 +90,16 @@
             <plugin>
                 <groupId>org.owasp</groupId>
                 <artifactId>dependency-check-maven</artifactId>
-                <version>11.1.1</version>
+                <version>13.0.0</version>
                 <configuration>
-                    <failBuildOnCVSS>7</failBuildOnCVSS>
-                    <nvdApiKey>05028C6D-2870-4358-A719-5424DDA781B3</nvdApiKey>
+                    <failBuildOnCVSS>${failBuildOnCVSS}</failBuildOnCVSS>
+                    <!-- La clave NVD se lee de la variable de entorno NVD_API_KEY (secreto en GitHub). -->
+                    <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
+                    <formats>
+                        <format>HTML</format>
+                        <format>JSON</format>
+                    </formats>
+                    <ossindexAnalyzerEnabled>false</ossindexAnalyzerEnabled>
                 </configuration>
             </plugin>
             <!-- SpotBugs -->
@@ -99,12 +107,32 @@
                 <groupId>com.github.spotbugs</groupId>
                 <artifactId>spotbugs-maven-plugin</artifactId>
                 <version>4.8.6.2</version>
+                <configuration>
+                    <effort>Max</effort>
+                    <threshold>Low</threshold>
+                    <xmlOutput>true</xmlOutput>
+                    <failOnError>false</failOnError>
+                    <plugins>
+                        <plugin>
+                            <groupId>com.h3xstream.findsecbugs</groupId>
+                            <artifactId>findsecbugs-plugin</artifactId>
+                            <version>1.14.0</version>
+                        </plugin>
+                    </plugins>
+                </configuration>
             </plugin>
             <!-- CycloneDX BOM Generator -->
             <plugin>
                 <groupId>org.cyclonedx</groupId>
                 <artifactId>cyclonedx-maven-plugin</artifactId>
                 <version>2.9.3</version>
+                <executions>
+                    <!-- Ejecución heredada de spring-boot-starter-parent; m2e (VS Code/Eclipse) la ignora, Maven la ejecuta igual. -->
+                    <execution>
+                        <?m2e ignore?>
+                        <id>default</id>
+                    </execution>
+                </executions>
                 <configuration>
                     <schemaVersion>1.6</schemaVersion>
                     <outputFormat>json</outputFormat>
