@@ -19,6 +19,8 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- Umbral CVSS de Dependency-Check; se puede sobrescribir con -DfailBuildOnCVSS=11 -->
+        <failBuildOnCVSS>7</failBuildOnCVSS>
     </properties>
 
     <dependencies>
@@ -90,7 +92,7 @@
                 <artifactId>dependency-check-maven</artifactId>
                 <version>13.0.0</version>
                 <configuration>
-                    <failBuildOnCVSS>7</failBuildOnCVSS>
+                    <failBuildOnCVSS>${failBuildOnCVSS}</failBuildOnCVSS>
                     <!-- La clave NVD se lee de la variable de entorno NVD_API_KEY (secreto en GitHub). -->
                     <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
                     <formats>
