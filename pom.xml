@@ -126,6 +126,13 @@
                 <groupId>org.cyclonedx</groupId>
                 <artifactId>cyclonedx-maven-plugin</artifactId>
                 <version>2.9.3</version>
+                <executions>
+                    <!-- Ejecución heredada de spring-boot-starter-parent; m2e (VS Code/Eclipse) la ignora, Maven la ejecuta igual. -->
+                    <execution>
+                        <?m2e ignore?>
+                        <id>default</id>
+                    </execution>
+                </executions>
                 <configuration>
                     <schemaVersion>1.6</schemaVersion>
                     <outputFormat>json</outputFormat>
