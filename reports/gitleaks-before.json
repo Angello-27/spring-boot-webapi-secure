@@ -1,0 +1,22 @@
+[
+ {
+  "RuleID": "demo-token",
+  "Description": "Token ficticio del laboratorio",
+  "StartLine": 1,
+  "EndLine": 1,
+  "StartColumn": 11,
+  "EndColumn": 37,
+  "Match": "REDACTED",
+  "Secret": "REDACTED",
+  "File": "/repo/secret-demo/demo.env",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 4.3565583,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "/repo/secret-demo/demo.env:demo-token:1"
+ }
+]

@@ -1,0 +1,15 @@
+[
+	{
+		"filename": "compose-lab.yaml",
+		"namespace": "main",
+		"successes": 0,
+		"failures": [
+			{
+				"msg": "Servicio app: privileged=true no permitido",
+				"metadata": {
+					"query": "data.main.deny"
+				}
+			}
+		]
+	}
+]
