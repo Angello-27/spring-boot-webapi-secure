@@ -25,6 +25,15 @@ PDF_OUT = os.path.join(BASE, "DevSecOps-Labs-Locales.pdf")
 AUTOR = "Miguel Angel Escobar Lazcano"
 REPO = "https://github.com/Angello-27/spring-boot-webapi-secure"
 RAMA = "feature/lab4-sbom-sca"
+# Versión y digest de las imágenes ejecutadas (docker image inspect), como pide el README de las guías.
+IMAGENES = [
+    ("semgrep/semgrep:latest", "1.179.0", "sha256:93963d9295a366f59e4850127b1550400ee7b388f04fe144e4a1f6325d96e01b"),
+    ("ghcr.io/zaproxy/zaproxy:stable", "2.17.0", "sha256:7aaa659b0d43078febd82e29bad112285c370727e86ab8340444220e17d9f0d2"),
+    ("bkimminich/juice-shop:latest", "latest", "sha256:73c53fbf442e8337b3ea3d98c7e8550308854701ebdfce4cc39768f36b75430e"),
+    ("aquasec/trivy:0.74.0", "0.74.0", "sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"),
+    ("ghcr.io/gitleaks/gitleaks:latest", "8.30.1", "sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"),
+    ("openpolicyagent/conftest:latest", "0.71.1", "sha256:0e77cdf7c1fcde035f3c579e4aaa6664ee2a8be5777eaa9af9f520cdd02280c0"),
+]
 GUIAS = "https://github.com/pablovillazon/devsecops-ddsv1e3/tree/main/guias-devsecops-local"
 CHROME_CANDIDATES = [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -196,7 +205,8 @@ def lab4():
                     terminal("04-09-sbom-after", keep=r"CycloneDX|BUILD|Writing"), terminal("04-10-bom-purl-after"),
                     terminal("04-11-sca-after", drop=r"Unsupported hash"), terminal("04-12-sca-compare")],
         headers=["CVE", "Componente", "Versión anterior → corregida", "Riesgo / estado"], hallazgos=hallazgos,
-        conclusion=f"El SBOM (commit base <code>00e5747</code>) inventaría la aplicación y 53 componentes. La dependencia directa es "
+        conclusion=f"El SBOM inicial (commit <code>00e5747</code>, commons-text 1.9) y el posterior (commit <code>90e490e</code>, "
+                   f"commons-text 1.10.0) inventarían la aplicación y 53 componentes. La dependencia directa es "
                    f"<code>commons-text</code> y la transitiva, <code>commons-lang3</code>. Con 1.10.0, <code>mvn clean verify</code> "
                    f"sigue pasando (2 tests, BUILD SUCCESS) y el análisis baja de {len(antes)} a {len(despues)} vulnerabilidades: "
                    "la única eliminada es CVE-2022-42889. Las demás vienen de Tomcat, Jackson y Spring, que administra el parent "
@@ -287,7 +297,9 @@ def main():
     ]))
     p.append("<p style='font-size:9pt;color:#57606a'>Cada bloque de terminal reproduce la salida registrada de la ejecución: "
              "fecha y hora (UTC-4), usuario@equipo, comando, salida y código de salida. Las líneas de progreso o repetitivas se omiten y se indica cuántas. "
-             "Los logs completos están en <code>reports/logs/</code>.</p></div>")
+             "Los logs completos están en <code>reports/logs/</code>.</p>")
+    p.append("<h3>Imágenes utilizadas</h3>" + table(["Imagen", "Versión", "Digest"], [
+        [f"<code>{e(i)}</code>", e(v), f"<code>{e(d[:19])}…</code>"] for i, v, d in IMAGENES]) + "</div>")
 
     for lab in labs:
         p.append(f"<h2>Lab {lab['num']} — {e(lab['titulo'])}</h2><p><b>Objetivo:</b> {lab['objetivo']}</p>")

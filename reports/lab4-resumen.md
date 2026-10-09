@@ -12,4 +12,4 @@
 
 ## Conclusión
 
-El SBOM (commit base 00e5747) inventaría la aplicación y 53 componentes. La dependencia directa es commons-text y la transitiva, commons-lang3. Con 1.10.0, mvn clean verify sigue pasando (2 tests, BUILD SUCCESS) y el análisis baja de 53 a 52 vulnerabilidades: la única eliminada es CVE-2022-42889. Las demás vienen de Tomcat, Jackson y Spring, que administra el parent de Spring Boot. Los SBOM se guardan como reports/bom-before.json y bom-after.json.
+El SBOM inicial (commit 00e5747, commons-text 1.9) y el posterior (commit 90e490e, commons-text 1.10.0) inventarían la aplicación y 53 componentes. La dependencia directa es commons-text y la transitiva, commons-lang3. Con 1.10.0, mvn clean verify sigue pasando (2 tests, BUILD SUCCESS) y el análisis baja de 53 a 52 vulnerabilidades: la única eliminada es CVE-2022-42889. Las demás vienen de Tomcat, Jackson y Spring, que administra el parent de Spring Boot. Los SBOM se guardan como reports/bom-before.json y bom-after.json.
